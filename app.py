@@ -191,20 +191,36 @@ def transcribe(path, workdir):
 
 def generate_replies(understanding):
     prompt = (
-        "A user is about to reply to a post on X (Twitter). Below is the content of that post "
-        "(visual description, narration transcript, and/or its text).\n\n"
+        "You're about to write a reply on X (Twitter) as a real person reacting to a post. "
+        "Below is the content of that post (visual description, narration transcript, "
+        "and/or its text).\n\n"
         "POST CONTENT:\n" + understanding[:6000] + "\n\n"
-        "Write 3 short reply comments. Rules: casual human voice, 1-3 sentences each, NO emojis, "
-        "NO hashtags, no clichés or AI-sounding formulas (nothing like 'buckle up' or 'take my "
-        "money'), no moralizing. Each reply must reference a specific detail from the content. "
-        "Make them different personalities: one funny, one impressed/hype, one thoughtful. "
-        "Output ONLY a JSON array: [{\"vibe\": \"...\", \"text\": \"...\"}]"
+        "Write 3 short replies, each one what a different real person would actually type "
+        "on their phone after seeing it. Sound human, not like a writer or a brand account.\n\n"
+        "Rules:\n"
+        "- No emojis, no hashtags, no em-dashes, no 'no one:' / 'everyone:' formats.\n"
+        "- Mix lengths: some replies one short line, others two or three lines.\n"
+        "- Don't explain the post or prove you got it. Just react — a dry one-liner is "
+        "fine, not every reply has to be witty.\n"
+        "- Reference details the way a friend would ('the cat looked so done'), not like "
+        "a reviewer describing a scene.\n"
+        "- Never use: honestly, truly, genuinely, actually, literally, not gonna lie, "
+        "the way, imagine, wild, unhinged, cinematic, masterpiece, living rent free, "
+        "unlocked, elevate, ultimate, power move, aura, cooked, buckle up, take my money, "
+        "say less, fancy way of saying, we are so back.\n"
+        "- Each reply has its own energy and way of talking — not three flavors of one sentence.\n"
+        "- Specific to THIS post. If a reply could fit under any post, rewrite it.\n\n"
+        "Example of the right feel (for a post of a cat that knocked a TV over):\n"
+        "'cats really do run the house'\n"
+        "'rip tv'\n"
+        "'he knew exactly what he was doing too'\n\n"
+        "Output ONLY a JSON array: [{\"vibe\": \"one or two words\", \"text\": \"...\"}]"
     )
     for model in TEXT_MODELS:
         for _ in range(2):
             try:
                 raw = groq_chat([{"role": "user", "content": prompt}], model,
-                                temperature=0.9, max_tokens=800)
+                                temperature=0.95, max_tokens=800)
                 raw = raw.replace("```json", "").replace("```", "")
                 start, end = raw.find("["), raw.rfind("]")
                 if start == -1 or end == -1:
