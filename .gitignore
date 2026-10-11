@@ -1,0 +1,9 @@
+# secrets — never commit
+groq_key.txt
+
+# runtime junk
+uploads/
+static/gifs/
+_app.log
+__pycache__/
+*.pyc

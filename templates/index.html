@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reply Studio</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b24;
+    --border: #262d3a;
+    --text: #e8ecf3;
+    --muted: #8b95a7;
+    --accent: #6c8cff;
+    --accent-2: #9d6cff;
+    --ok: #3ecf8e;
+    --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px 48px;
+  }
+  h1 { font-size: 1.5rem; letter-spacing: -0.02em; }
+  h1 span { background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); font-size: 0.88rem; margin-top: 6px; }
+  .wrap { width: 100%; max-width: 680px; margin-top: 20px; }
+
+  .tabs { display: flex; gap: 8px; }
+  .tab {
+    flex: 1; padding: 11px 4px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; color: var(--muted); font-size: 0.92rem; font-weight: 600;
+    cursor: pointer; text-align: center; transition: all .15s;
+  }
+  .tab.active {
+    color: var(--text); border-color: var(--accent);
+    background: linear-gradient(180deg, #1a2130, var(--panel));
+  }
+  .pane { display: none; margin-top: 20px; }
+  .pane.active { display: block; }
+
+  .drop {
+    border: 2px dashed var(--border); border-radius: 14px; padding: 38px 20px;
+    text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+    background: var(--panel);
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: #1a2130; }
+  .drop .big { font-size: 1.02rem; }
+  .drop .hint { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+
+  #preview { margin-top: 16px; display: none; }
+  #preview video, #preview img {
+    width: 100%; max-height: 360px; object-fit: contain; border-radius: 12px;
+    border: 1px solid var(--border); background: #000;
+  }
+  #fname { color: var(--muted); font-size: 0.85rem; margin-top: 8px; text-align: center;
+           word-break: break-all; }
+
+  textarea {
+    width: 100%; min-height: 130px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; color: var(--text); padding: 14px; font-size: 1rem;
+    font-family: inherit; line-height: 1.5; resize: vertical; outline: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: #55607a; }
+  .mode-row { display: flex; gap: 8px; margin-top: 12px; }
+  .mode {
+    flex: 1; padding: 9px 4px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--muted); font-size: 0.85rem; cursor: pointer;
+    text-align: center;
+  }
+  .mode.active { color: var(--text); border-color: var(--accent); }
+  .gif-hint { color: var(--muted); font-size: 0.78rem; margin-top: 10px; text-align: center; }
+
+  .btn {
+    display: none; width: 100%; margin-top: 14px; padding: 14px; border: none;
+    border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff;
+    transition: filter .15s;
+  }
+  .btn:hover { filter: brightness(1.12); }
+  .btn:disabled { opacity: .55; cursor: wait; }
+
+  #status { display: none; margin-top: 16px; color: var(--muted); text-align: center; font-size: .9rem; }
+  .spinner {
+    display: inline-block; width: 15px; height: 15px; border: 2px solid var(--muted);
+    border-top-color: var(--accent); border-radius: 50%; margin-right: 8px;
+    vertical-align: -2px; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #error { display: none; margin-top: 16px; padding: 14px; border-radius: 10px;
+           background: #2a1518; border: 1px solid #4a2328; color: var(--err); font-size: .9rem; }
+
+  #results { display: none; margin-top: 22px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 18px 14px; margin-bottom: 14px; position: relative;
+  }
+  .vibe {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--accent); font-weight: 700; margin-bottom: 8px;
+  }
+  .reply { font-size: 1.02rem; line-height: 1.55; white-space: pre-wrap; }
+  .copy {
+    position: absolute; top: 14px; right: 14px; background: transparent;
+    border: 1px solid var(--border); color: var(--muted); font-size: .75rem;
+    padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .copy:hover { border-color: var(--accent); color: var(--text); }
+  .copy.done { color: var(--ok); border-color: var(--ok); }
+
+  #gifout { display: none; margin-top: 22px; text-align: center; }
+  #gifimg {
+    width: 100%; max-width: 420px; border-radius: 12px; border: 1px solid var(--border);
+    background: #000;
+  }
+  .gif-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .gif-btn {
+    flex: 1; padding: 13px; border: none; border-radius: 12px; font-size: .95rem;
+    font-weight: 600; cursor: pointer;
+  }
+  #gifsave { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; }
+  #gifcopy { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+  summary:hover { color: var(--text); }
+  details pre {
+    margin-top: 10px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; font-size: .8rem; line-height: 1.5;
+    white-space: pre-wrap; color: var(--muted); max-height: 300px; overflow-y: auto;
+  }
+  .foot { margin-top: 40px; color: #55607a; font-size: .75rem; text-align: center; }
+  .foot a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+  <h1>Reply <span>Studio</span></h1>
+  <div class="sub">Short replies for posts, images &amp; videos · makes GIFs too</div>
+
+  <div class="wrap">
+    <div class="tabs">
+      <div class="tab active" data-pane="media">Media</div>
+      <div class="tab" data-pane="text">Text</div>
+      <div class="tab" data-pane="gif">GIF</div>
+    </div>
+
+    <!-- media pane -->
+    <div class="pane active" id="pane-media">
+      <div class="drop" id="drop">
+        <div class="big">Drop a video or image here</div>
+        <div class="hint">or tap to browse · paste a screenshot works too · videos take ~2 min</div>
+      </div>
+      <input type="file" id="file" accept="video/*,image/*" hidden>
+      <div id="preview">
+        <video id="vpreview" controls></video>
+        <img id="ipreview" alt="preview">
+        <div id="fname"></div>
+      </div>
+      <textarea id="mediatext" style="min-height:76px; margin-top:14px"
+        placeholder="Optional: paste the post's text / caption too — helps a lot for videos that have text"></textarea>
+      <button class="btn" id="go">Generate replies</button>
+    </div>
+
+    <!-- text pane -->
+    <div class="pane" id="pane-text">
+      <textarea id="tweet" placeholder="Paste the post text you want to reply to…"></textarea>
+      <button class="btn" id="tgo" style="display:block">Generate replies</button>
+    </div>
+
+    <!-- gif pane -->
+    <div class="pane" id="pane-gif">
+      <textarea id="gifprompt" placeholder="Describe the GIF, e.g. a cat breakdancing in a boxing ring"></textarea>
+      <div class="mode-row">
+        <div class="mode active" data-mode="morph">Morph — 3 images crossfade</div>
+        <div class="mode" data-mode="zoom">Zoom — smooth loop</div>
+      </div>
+      <button class="btn" id="ggo" style="display:block">Make GIF</button>
+      <div class="gif-hint">Usually 1-5 minutes · free crowdsourced AI workers, no signup</div>
+      <div id="gifout">
+        <img id="gifimg" alt="generated gif">
+        <div class="gif-actions">
+          <button class="gif-btn" id="gifsave">Save GIF</button>
+          <button class="gif-btn" id="gifcopy">Copy link</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="status"><span class="spinner"></span><span id="statustext"></span></div>
+    <div id="error"></div>
+
+    <div id="results">
+      <div id="cards"></div>
+      <details><summary>What the AI saw</summary><pre id="understanding"></pre></details>
+    </div>
+  </div>
+
+  <div class="foot"><div id="urls"></div>Groq + Stable Horde free APIs · copies only — you post</div>
+
+<script>
+  // ---- tabs ----
+  const tabs = document.querySelectorAll('.tab');
+  const panes = { media: document.getElementById('pane-media'),
+                  text: document.getElementById('pane-text'),
+                  gif: document.getElementById('pane-gif') };
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    Object.values(panes).forEach(p => p.classList.remove('active'));
+    t.classList.add('active');
+    panes[t.dataset.pane].classList.add('active');
+    hideAll();
+  }));
+
+  const statusBox = document.getElementById('status');
+  const statusText = document.getElementById('statustext');
+  const errBox = document.getElementById('error');
+  const results = document.getElementById('results');
+  const cards = document.getElementById('cards');
+  const understanding = document.getElementById('understanding');
+
+  function hideAll() {
+    statusBox.style.display = 'none';
+    errBox.style.display = 'none';
+    results.style.display = 'none';
+  }
+  function working(msg) {
+    statusText.textContent = msg;
+    statusBox.style.display = 'block';
+    errBox.style.display = 'none';
+    results.style.display = 'none';
+  }
+  function fail(e) {
+    errBox.textContent = 'Error: ' + e.message;
+    errBox.style.display = 'block';
+  }
+
+  function renderReplies(replies) {
+    cards.innerHTML = '';
+    for (const rep of replies) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<div class="vibe">' + rep.vibe + '</div>' +
+        '<button class="copy">Copy</button>' +
+        '<div class="reply"></div>';
+      card.querySelector('.reply').textContent = rep.text;
+      card.querySelector('.copy').addEventListener('click', function () {
+        navigator.clipboard.writeText(rep.text).then(() => {
+          this.textContent = 'Copied'; this.classList.add('done');
+          setTimeout(() => { this.textContent = 'Copy'; this.classList.remove('done'); }, 1500);
+        });
+      });
+      cards.appendChild(card);
+    }
+    results.style.display = 'block';
+  }
+
+  // ---- media pane ----
+  const drop = document.getElementById('drop');
+  const fileInput = document.getElementById('file');
+  const previewBox = document.getElementById('preview');
+  const vPrev = document.getElementById('vpreview');
+  const iPrev = document.getElementById('ipreview');
+  const fname = document.getElementById('fname');
+  const goBtn = document.getElementById('go');
+  const mediatext = document.getElementById('mediatext');
+  let currentFile = null;
+
+  function showFile(file) {
+    if (!file) return;
+    currentFile = file;
+    fname.textContent = file.name + ' · ' + (file.size / 1048576).toFixed(1) + ' MB';
+    const url = URL.createObjectURL(file);
+    if (file.type.startsWith('video/')) {
+      vPrev.src = url; vPrev.style.display = 'block'; iPrev.style.display = 'none';
+    } else {
+      iPrev.src = url; iPrev.style.display = 'block'; vPrev.style.display = 'none';
+    }
+    previewBox.style.display = 'block';
+    goBtn.style.display = 'block';
+    hideAll();
+  }
+
+  drop.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => showFile(fileInput.files[0]));
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('over');
+    showFile(e.dataTransfer.files[0]);
+  });
+  window.addEventListener('paste', e => {
+    for (const item of e.clipboardData.items) {
+      if (item.kind === 'file') { showFile(item.getAsFile()); break; }
+    }
+  });
+
+  goBtn.addEventListener('click', async () => {
+    if (!currentFile) return;
+    goBtn.disabled = true;
+    working(currentFile.type.startsWith('video/')
+      ? 'Working — extracting frames, reading visuals, transcribing audio… (videos take ~2 min)'
+      : 'Working — reading the image…');
+    try {
+      const fd = new FormData();
+      fd.append('file', currentFile);
+      if (mediatext.value.trim()) fd.append('text', mediatext.value.trim());
+      const r = await fetch('/api/generate', { method: 'POST', body: fd });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
+      renderReplies(data.replies);
+      understanding.textContent = data.understanding;
+      document.querySelector('#results details').style.display = 'block';
+    } catch (e) { fail(e); }
+    finally { statusBox.style.display = 'none'; goBtn.disabled = false; }
+  });
+
+  // ---- text pane ----
+  const tweet = document.getElementById('tweet');
+  const tgo = document.getElementById('tgo');
+  tgo.addEventListener('click', async () => {
+    if (!tweet.value.trim()) return;
+    tgo.disabled = true;
+    working('Writing replies…');
+    try {
+      const r = await fetch('/api/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: tweet.value })
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
+      renderReplies(data.replies);
+      document.querySelector('#results details').style.display = 'none';
+    } catch (e) { fail(e); }
+    finally { statusBox.style.display = 'none'; tgo.disabled = false; }
+  });
+
+  // ---- gif pane ----
+  const gifprompt = document.getElementById('gifprompt');
+  const ggo = document.getElementById('ggo');
+  const gifout = document.getElementById('gifout');
+  const gifimg = document.getElementById('gifimg');
+  const modes = document.querySelectorAll('.mode');
+  let gifMode = 'morph';
+  modes.forEach(m => m.addEventListener('click', () => {
+    modes.forEach(x => x.classList.remove('active'));
+    m.classList.add('active');
+    gifMode = m.dataset.mode;
+  }));
+
+  ggo.addEventListener('click', async () => {
+    if (!gifprompt.value.trim()) return;
+    ggo.disabled = true;
+    gifout.style.display = 'none';
+    working('Making your GIF… waiting on free AI workers, this can take a few minutes');
+    try {
+      const r = await fetch('/api/gif', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: gifprompt.value, mode: gifMode })
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
+      gifimg.src = data.url + '?t=' + Date.now();
+      gifout.style.display = 'block';
+      gifimg.dataset.url = data.url;
+    } catch (e) { fail(e); }
+    finally { statusBox.style.display = 'none'; ggo.disabled = false; }
+  });
+
+  document.getElementById('gifsave').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = gifimg.dataset.url;
+    a.download = 'reply.gif';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+  document.getElementById('gifcopy').addEventListener('click', () => {
+    const url = location.origin + gifimg.dataset.url;
+    navigator.clipboard.writeText(url).then(() => {
+      const b = document.getElementById('gifcopy');
+      b.textContent = 'Copied!';
+      setTimeout(() => { b.textContent = 'Copy link'; }, 1500);
+    });
+  });
+
+  // ---- access links in footer ----
+  fetch('/api/info').then(r => r.json()).then(d => {
+    const el = document.getElementById('urls');
+    let html = 'PC: <a href="http://127.0.0.1:' + d.port + '">http://127.0.0.1:' + d.port + '</a>'
+      + ' · Phone same WiFi: <a href="http://' + d.lan_ip + ':' + d.port + '">http://' + d.lan_ip + ':' + d.port + '</a>';
+    if (d.tailscale_ip) {
+      html += '<br>Phone anywhere: <a href="http://' + d.tailscale_ip + ':' + d.port + '">'
+        + 'http://' + d.tailscale_ip + ':' + d.port + '</a> (Tailscale)';
+    }
+    el.innerHTML = html;
+  }).catch(() => {});
+</script>
+</body>
+</html>

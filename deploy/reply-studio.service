@@ -1,0 +1,17 @@
+[Unit]
+Description=Reply Studio (X reply generator + GIF maker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/reply-studio
+ExecStart=/opt/reply-studio/.venv/bin/python app.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+# Bind to the VM's Tailscale IP so the app is reachable only from your devices,
+# never from the public internet. Fill in after `tailscale up` on the VM.
+Environment=REPLY_HOST=
+
+[Install]
+WantedBy=multi-user.target
