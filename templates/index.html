@@ -146,6 +146,7 @@
     <div class="tabs">
       <div class="tab active" data-pane="media">Media</div>
       <div class="tab" data-pane="text">Text</div>
+      <div class="tab" data-pane="post">Post</div>
       <div class="tab" data-pane="gif">GIF</div>
     </div>
 
@@ -178,6 +179,16 @@
         <div class="mode" data-voice="openai/gpt-oss-120b">Dry voice</div>
       </div>
       <button class="btn" id="tgo" style="display:block">Generate replies</button>
+    </div>
+
+    <!-- post pane -->
+    <div class="pane" id="pane-post">
+      <textarea id="posttopic" placeholder="What should the post be about? (leave empty and it picks something good)"></textarea>
+      <div class="mode-row">
+        <div class="mode active" data-pvoice="qwen/qwen3.8-27b">Casual voice</div>
+        <div class="mode" data-pvoice="openai/gpt-oss-120b">Dry voice</div>
+      </div>
+      <button class="btn" id="pgo" style="display:block">Generate posts</button>
     </div>
 
     <!-- gif pane -->
@@ -214,6 +225,7 @@
   const tabs = document.querySelectorAll('.tab');
   const panes = { media: document.getElementById('pane-media'),
                   text: document.getElementById('pane-text'),
+                  post: document.getElementById('pane-post'),
                   gif: document.getElementById('pane-gif') };
   tabs.forEach(t => t.addEventListener('click', () => {
     tabs.forEach(x => x.classList.remove('active'));
@@ -358,6 +370,32 @@
       document.querySelector('#results details').style.display = 'none';
     } catch (e) { fail(e); }
     finally { statusBox.style.display = 'none'; tgo.disabled = false; }
+  });
+
+  // ---- post pane ----
+  const posttopic = document.getElementById('posttopic');
+  const pgo = document.getElementById('pgo');
+  let pvoice = 'qwen/qwen3.8-27b';
+  document.querySelectorAll('#pane-post .mode').forEach(m => m.addEventListener('click', () => {
+    document.querySelectorAll('#pane-post .mode').forEach(x => x.classList.remove('active'));
+    m.classList.add('active');
+    pvoice = m.dataset.pvoice;
+  }));
+  pgo.addEventListener('click', async () => {
+    pgo.disabled = true;
+    working('Writing posts…');
+    try {
+      const r = await fetch('/api/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: posttopic.value, model: pvoice })
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
+      renderReplies(data.replies);
+      document.querySelector('#results details').style.display = 'none';
+    } catch (e) { fail(e); }
+    finally { statusBox.style.display = 'none'; pgo.disabled = false; }
   });
 
   // ---- gif pane ----

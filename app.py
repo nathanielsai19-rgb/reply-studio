@@ -190,9 +190,6 @@ def transcribe(path, workdir):
 
 
 def generate_replies(understanding, preferred=None):
-    models = TEXT_MODELS
-    if preferred and preferred in TEXT_MODELS:
-        models = [preferred] + [m for m in TEXT_MODELS if m != preferred]
     prompt = (
         "You are about to reply on X (Twitter) as a real person who just saw this post. "
         "Below is the post's content (visual description, narration transcript, "
@@ -219,6 +216,48 @@ def generate_replies(understanding, preferred=None):
         "'nah this is unreal'\n\n"
         "Output ONLY a JSON array: [{\"vibe\": \"one or two words\", \"text\": \"...\"}]"
     )
+    return gen_json(prompt, preferred)
+
+
+def generate_posts(topic, preferred=None):
+    """Original X posts (not replies). topic may be empty — the model picks."""
+    if topic:
+        brief = f"The post should be about: {topic[:1500]}"
+    else:
+        brief = ("Pick a subject yourself — something real and specific that would "
+                 "actually land with people right now.")
+    prompt = (
+        "You are writing an original post for X (Twitter). It must be VERY good — the "
+        "kind that makes people stop scrolling and want to reply.\n\n"
+        + brief + "\n\n"
+        "Write 3 different posts.\n\n"
+        "Requirements:\n"
+        "- Short. Most are 1-3 lines. No threads.\n"
+        "- A real person typed this fast. Uneven case ok, fragments ok. No emojis, "
+        "no hashtags, no em-dashes.\n"
+        "- Strong first line: a hook, a surprising take, a specific detail, or a question "
+        "people will actually answer.\n"
+        "- Original take. If it sounds like an engagement-farming account wrote it, rewrite.\n"
+        "- Banned formats: 'unpopular opinion:', 'hot take:', 'POV:', 'thread:', "
+        "'am I the only one', 'reminder that', 'nobody is talking about'.\n"
+        "- Banned phrases: honestly, truly, the way, imagine, living rent free, "
+        "power move, we are so back, real ones know, let that sink in.\n"
+        "- Specific beats vague. Numbers, names, concrete moments.\n"
+        "- No motivation-poster energy, no life coaching unless it's genuinely funny.\n"
+        "- No engagement bait ('like if you agree', 'rt to save a life', 'this will get "
+        "me canceled').\n"
+        "- Dry humor and honest opinions welcome.\n"
+        "- Three different angles: one funny, one honest/relatable, one sharp observation.\n\n"
+        "Output ONLY a JSON array: [{\"vibe\": \"one or two words\", \"text\": \"...\"}]"
+    )
+    return gen_json(prompt, preferred)
+
+
+def gen_json(prompt, preferred=None):
+    """Run the model-loop and parse a JSON array of {\"vibe\", \"text\"} objects."""
+    models = TEXT_MODELS
+    if preferred and preferred in TEXT_MODELS:
+        models = [preferred] + [m for m in TEXT_MODELS if m != preferred]
     for model in models:
         for _ in range(2):
             try:
@@ -235,7 +274,7 @@ def generate_replies(understanding, preferred=None):
                 time.sleep(10)
             except Exception:
                 break
-    raise RuntimeError("reply generation failed — try again")
+    raise RuntimeError("generation failed — try again")
 
 
 # ---------- gif helpers ----------
@@ -371,6 +410,17 @@ def text_replies():
         replies, model = generate_replies("TEXT OF THE POST:\n" + text[:6000],
                                           preferred=data.get("model"))
         return jsonify({"ok": True, "replies": replies, "model": model})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/post", methods=["POST"])
+def make_post():
+    data = request.get_json(silent=True) or {}
+    topic = (data.get("topic") or "").strip()
+    try:
+        posts, model = generate_posts(topic, preferred=data.get("model"))
+        return jsonify({"ok": True, "replies": posts, "model": model})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
