@@ -163,12 +163,20 @@
       </div>
       <textarea id="mediatext" style="min-height:76px; margin-top:14px"
         placeholder="Optional: paste the post's text / caption too — helps a lot for videos that have text"></textarea>
+      <div class="mode-row">
+        <div class="mode active" data-mvoice="qwen/qwen3.8-27b">Casual voice</div>
+        <div class="mode" data-mvoice="openai/gpt-oss-120b">Dry voice</div>
+      </div>
       <button class="btn" id="go">Generate replies</button>
     </div>
 
     <!-- text pane -->
     <div class="pane" id="pane-text">
       <textarea id="tweet" placeholder="Paste the post text you want to reply to…"></textarea>
+      <div class="mode-row">
+        <div class="mode active" data-voice="qwen/qwen3.8-27b">Casual voice</div>
+        <div class="mode" data-voice="openai/gpt-oss-120b">Dry voice</div>
+      </div>
       <button class="btn" id="tgo" style="display:block">Generate replies</button>
     </div>
 
@@ -308,6 +316,7 @@
       const fd = new FormData();
       fd.append('file', currentFile);
       if (mediatext.value.trim()) fd.append('text', mediatext.value.trim());
+      fd.append('model', mvoice);
       const r = await fetch('/api/generate', { method: 'POST', body: fd });
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
@@ -321,6 +330,18 @@
   // ---- text pane ----
   const tweet = document.getElementById('tweet');
   const tgo = document.getElementById('tgo');
+  let voice = 'qwen/qwen3.8-27b';
+  let mvoice = 'qwen/qwen3.8-27b';
+  document.querySelectorAll('#pane-text .mode').forEach(m => m.addEventListener('click', () => {
+    document.querySelectorAll('#pane-text .mode').forEach(x => x.classList.remove('active'));
+    m.classList.add('active');
+    voice = m.dataset.voice;
+  }));
+  document.querySelectorAll('#pane-media .mode').forEach(m => m.addEventListener('click', () => {
+    document.querySelectorAll('#pane-media .mode').forEach(x => x.classList.remove('active'));
+    m.classList.add('active');
+    mvoice = m.dataset.mvoice;
+  }));
   tgo.addEventListener('click', async () => {
     if (!tweet.value.trim()) return;
     tgo.disabled = true;
@@ -329,7 +350,7 @@
       const r = await fetch('/api/text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: tweet.value })
+        body: JSON.stringify({ text: tweet.value, model: voice })
       });
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));

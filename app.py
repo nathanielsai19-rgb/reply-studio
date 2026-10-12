@@ -32,7 +32,7 @@ GROQ_CHAT = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_AUDIO = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 VISION_MODEL = "qwen/qwen3.8-27b"
-TEXT_MODELS = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "groq/compound-mini"]
+TEXT_MODELS = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 WHISPER_MODELS = ["whisper-large-v3-turbo", "whisper-large-v3"]
 
 MAX_FRAMES = 30          # vision requests stay snappy on the free tier
@@ -189,34 +189,37 @@ def transcribe(path, workdir):
     return "(transcription failed)"
 
 
-def generate_replies(understanding):
+def generate_replies(understanding, preferred=None):
+    models = TEXT_MODELS
+    if preferred and preferred in TEXT_MODELS:
+        models = [preferred] + [m for m in TEXT_MODELS if m != preferred]
     prompt = (
-        "You're about to write a reply on X (Twitter) as a real person reacting to a post. "
-        "Below is the content of that post (visual description, narration transcript, "
+        "You are about to reply on X (Twitter) as a real person who just saw this post. "
+        "Below is the post's content (visual description, narration transcript, "
         "and/or its text).\n\n"
         "POST CONTENT:\n" + understanding[:6000] + "\n\n"
-        "Write 3 short replies, each one what a different real person would actually type "
-        "on their phone after seeing it. Sound human, not like a writer or a brand account.\n\n"
-        "Rules:\n"
-        "- No emojis, no hashtags, no em-dashes, no 'no one:' / 'everyone:' formats.\n"
-        "- Mix lengths: some replies one short line, others two or three lines.\n"
-        "- Don't explain the post or prove you got it. Just react — a dry one-liner is "
-        "fine, not every reply has to be witty.\n"
-        "- Reference details the way a friend would ('the cat looked so done'), not like "
-        "a reviewer describing a scene.\n"
-        "- Never use: honestly, truly, genuinely, actually, literally, not gonna lie, "
-        "the way, imagine, wild, unhinged, cinematic, masterpiece, living rent free, "
-        "unlocked, elevate, ultimate, power move, aura, cooked, buckle up, take my money, "
-        "say less, fancy way of saying, we are so back.\n"
-        "- Each reply has its own energy and way of talking — not three flavors of one sentence.\n"
-        "- Specific to THIS post. If a reply could fit under any post, rewrite it.\n\n"
-        "Example of the right feel (for a post of a cat that knocked a TV over):\n"
+        "Write 3 replies, each from a different person.\n\n"
+        "How to sound real:\n"
+        "- Text it, don't write it. Uneven case, fragments, dropped words: 'nah this is "
+        "crazy', 'bro really did that', 'he knew'. Thumbs typing fast.\n"
+        "- Land the point and stop. Cut trailing explanations and closing sentences.\n"
+        "- React, don't review. Don't restate the post, don't explain why it's funny "
+        "or impressive.\n"
+        "- Humor is dry. Not every reply is a joke; 2-word replies are valid.\n"
+        "- Mention details the way you'd notice them in passing, not like a scene description.\n"
+        "- Never: emojis, hashtags, em-dashes, or these dead phrases — honestly, truly, "
+        "the way, imagine, living rent free, power move, fancy way of saying, "
+        "we are so back, real ones know.\n\n"
+        "Reply shapes should differ — some one-liners, some two lines, different energy "
+        "each. If a reply could sit under any post, rewrite it.\n\n"
+        "Reference points for feel:\n"
         "'cats really do run the house'\n"
         "'rip tv'\n"
-        "'he knew exactly what he was doing too'\n\n"
+        "'he knew exactly what he was doing too'\n"
+        "'nah this is unreal'\n\n"
         "Output ONLY a JSON array: [{\"vibe\": \"one or two words\", \"text\": \"...\"}]"
     )
-    for model in TEXT_MODELS:
+    for model in models:
         for _ in range(2):
             try:
                 raw = groq_chat([{"role": "user", "content": prompt}], model,
@@ -365,7 +368,8 @@ def text_replies():
     if not text:
         return jsonify({"error": "paste the post text first"}), 400
     try:
-        replies, model = generate_replies("TEXT OF THE POST:\n" + text[:6000])
+        replies, model = generate_replies("TEXT OF THE POST:\n" + text[:6000],
+                                          preferred=data.get("model"))
         return jsonify({"ok": True, "replies": replies, "model": model})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -428,7 +432,8 @@ def generate():
             return jsonify({"error": f"unsupported file type: {ext or 'unknown'}"}), 400
 
         replies, model = generate_replies(
-            (f"TEXT OF THE POST:\n{post_text[:3000]}\n\n" if post_text else "") + understanding)
+            (f"TEXT OF THE POST:\n{post_text[:3000]}\n\n" if post_text else "") + understanding,
+            preferred=request.form.get("model"))
         return jsonify({"ok": True, "kind": kind, "understanding": understanding,
                         "replies": replies, "model": model})
     except Exception as e:
