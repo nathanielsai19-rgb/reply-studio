@@ -17,6 +17,7 @@ import random
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -494,7 +495,7 @@ def generate():
 
 if __name__ == "__main__":
     ip = lan_ip()
-    if os.name == "nt":   # headless boxes (the ops VM) have no browser
+    if os.name == "nt" and "--no-browser" not in sys.argv:   # headless boxes have no browser
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
     print(f"\nReply Studio running:")
     print(f"  PC:     http://127.0.0.1:{PORT}")
