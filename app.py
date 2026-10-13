@@ -11,6 +11,8 @@ Serves on 0.0.0.0 so your phone on the same WiFi can use it too.
 """
 import base64
 import glob
+import hashlib
+import hmac
 import json
 import os
 import random
@@ -61,7 +63,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip() or \
     open(os.path.join(BASE, "groq_key.txt"), encoding="utf-8").read().strip()
 
 HEADERS = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-PORT = 5190
+PORT = int(os.environ.get("PORT", 5190))   # Render sets PORT; local default 5190
 
 
 # ---------- helpers ----------
@@ -387,6 +389,67 @@ def clean_old_gifs():
                 os.remove(p)
         except OSError:
             pass
+
+
+# ---------- pin gate (only active when REQUIRE_PIN=1, i.e. on the public host) ----------
+
+PIN_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reply Studio</title><style>
+body{background:#0e1116;color:#e8ecf3;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;
+display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+.box{text-align:center;padding:0 20px}
+h1{font-size:1.4rem;margin-bottom:22px}
+input{background:#161b24;border:1px solid #262d3a;border-radius:12px;color:#e8ecf3;
+padding:14px;font-size:1.2rem;text-align:center;letter-spacing:.3em;width:180px;outline:none}
+button{margin-top:14px;padding:13px 34px;border:none;border-radius:12px;font-size:1rem;
+font-weight:600;background:linear-gradient(90deg,#6c8cff,#9d6cff);color:#fff;cursor:pointer}
+#err{color:#ff6b6b;font-size:.85rem;margin-top:12px;display:none}
+</style></head><body><div class="box">
+<h1>Enter PIN</h1>
+<input id="pin" inputmode="numeric" autocomplete="off">
+<div><button onclick="tryPin()">Unlock</button></div>
+<div id="err">Wrong PIN</div>
+</div><script>
+async function tryPin(){
+  const r=await fetch('/api/pin',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pin:document.getElementById('pin').value})});
+  if(r.ok){location.reload();}else{document.getElementById('err').style.display='block';}
+}
+document.getElementById('pin').addEventListener('keydown',e=>{if(e.key==='Enter')tryPin();});
+</script></body></html>"""
+
+
+def pin_expected():
+    """sha256 of the PIN — the cookie holds this hash, never the PIN itself."""
+    pin = os.environ.get("REPLY_PIN", "").strip() or \
+        open(os.path.join(BASE, "pin.txt"), encoding="utf-8").read().strip()
+    return hashlib.sha256(pin.encode()).hexdigest() if pin else None
+
+
+@app.before_request
+def pin_gate():
+    if os.environ.get("REQUIRE_PIN") != "1":
+        return
+    if request.path.startswith("/static/") or request.path == "/api/pin":
+        return
+    expected = pin_expected()
+    if expected and not hmac.compare_digest(request.cookies.get("rs_pin", ""), expected):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "enter the PIN first"}), 401
+        return PIN_PAGE
+
+
+@app.route("/api/pin", methods=["POST"])
+def pin_check():
+    data = request.get_json(silent=True) or {}
+    expected = pin_expected()
+    if expected and hmac.compare_digest(
+            hashlib.sha256((data.get("pin") or "").encode()).hexdigest(), expected):
+        resp = jsonify({"ok": True})
+        resp.set_cookie("rs_pin", expected, max_age=30 * 24 * 3600, httponly=True)
+        return resp
+    return jsonify({"error": "wrong pin"}), 401
 
 
 # ---------- routes ----------

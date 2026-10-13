@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: reply-studio
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/info
+    envVars:
+      - key: REQUIRE_PIN
+        value: "1"
+      # Set these two in the Render dashboard after deploying:
+      # GROQ_API_KEY  -> your Groq key (contents of groq_key.txt)
+      # REPLY_PIN     -> a PIN only you know (protects the public URL)
