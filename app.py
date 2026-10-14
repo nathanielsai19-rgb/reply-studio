@@ -193,33 +193,58 @@ def transcribe(path, workdir):
 
 
 def generate_replies(understanding, preferred=None):
+    content = understanding[:6000]
     prompt = (
         "You are about to reply on X (Twitter) as a real person who just saw this post. "
         "Below is the post's content (visual description, narration transcript, "
         "and/or its text).\n\n"
-        "POST CONTENT:\n" + understanding[:6000] + "\n\n"
+        "POST CONTENT:\n" + content + "\n\n"
         "Write 3 replies, each from a different person.\n\n"
         "How to sound real:\n"
+        "- Grab a SPECIFIC detail from the post — a word, a number, a name, a moment — and "
+        "react to that. A reply that could sit under any post is banned.\n"
         "- Text it, don't write it. Uneven case, fragments, dropped words: 'nah this is "
         "crazy', 'bro really did that', 'he knew'. Thumbs typing fast.\n"
         "- Land the point and stop. Cut trailing explanations and closing sentences.\n"
         "- React, don't review. Don't restate the post, don't explain why it's funny "
         "or impressive.\n"
         "- Humor is dry. Not every reply is a joke; 2-word replies are valid.\n"
-        "- Mention details the way you'd notice them in passing, not like a scene description.\n"
         "- Never: emojis, hashtags, em-dashes, or these dead phrases — honestly, truly, "
         "the way, imagine, living rent free, power move, fancy way of saying, "
         "we are so back, real ones know.\n\n"
         "Reply shapes should differ — some one-liners, some two lines, different energy "
-        "each. If a reply could sit under any post, rewrite it.\n\n"
-        "Reference points for feel:\n"
+        "each.\n\n"
+        "Reference points for feel (for a post of a cat that knocked a TV over):\n"
         "'cats really do run the house'\n"
         "'rip tv'\n"
-        "'he knew exactly what he was doing too'\n"
-        "'nah this is unreal'\n\n"
+        "'he knocked it over then just sat there like nothing happened'\n\n"
         "Output ONLY a JSON array: [{\"vibe\": \"one or two words\", \"text\": \"...\"}]"
     )
-    return gen_json(prompt, preferred)
+    data, model = gen_json(prompt, preferred)
+    # refinement pass: make every reply actually react to THIS content
+    refine = (
+        "You are tightening replies to a post on X (Twitter). Here is what the post contains:\n\n"
+        "POST CONTENT:\n" + content[:3000] + "\n\n"
+        "These draft replies exist:\n" + json.dumps(data, ensure_ascii=False) + "\n\n"
+        "Fix them:\n"
+        "- Every reply must react to a SPECIFIC detail from the post — a word, a number, "
+        "a name, a moment. If a reply is generic and could sit under any post, rewrite it "
+        "to grab onto something concrete from the content above.\n"
+        "- Keep voice rules: text it don't write it, uneven case and fragments ok, no "
+        "emojis, no hashtags, no em-dashes, no dead phrases (honestly, truly, the way, "
+        "imagine, power move, living rent free, we are so back, unreal, cinema), land the "
+        "point and stop, dry humor fine, each reply a different energy, some one-liners.\n"
+        "- Keep each reply's vibe label, updating it if the rewrite changes the energy.\n"
+        "- If a reply is already specific and human, leave it exactly as it is.\n\n"
+        "Output ONLY a JSON array: [{\"vibe\": \"...\", \"text\": \"...\"}]"
+    )
+    try:
+        refined, _ = gen_json(refine, preferred)
+        if refined:
+            data = refined
+    except Exception:
+        pass
+    return data, model
 
 
 def generate_posts(topic, preferred=None):
