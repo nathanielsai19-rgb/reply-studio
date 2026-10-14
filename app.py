@@ -218,7 +218,7 @@ def generate_replies(understanding, preferred=None):
         "'cats really do run the house'\n"
         "'rip tv'\n"
         "'he knocked it over then just sat there like nothing happened'\n\n"
-        "Output ONLY a JSON array: [{\"vibe\": \"one or two words\", \"text\": \"...\"}]"
+        "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
     data, model = gen_json(prompt, preferred)
     # refinement pass: make every reply actually react to THIS content
@@ -234,9 +234,8 @@ def generate_replies(understanding, preferred=None):
         "emojis, no hashtags, no em-dashes, no dead phrases (honestly, truly, the way, "
         "imagine, power move, living rent free, we are so back, unreal, cinema), land the "
         "point and stop, dry humor fine, each reply a different energy, some one-liners.\n"
-        "- Keep each reply's vibe label, updating it if the rewrite changes the energy.\n"
         "- If a reply is already specific and human, leave it exactly as it is.\n\n"
-        "Output ONLY a JSON array: [{\"vibe\": \"...\", \"text\": \"...\"}]"
+        "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
     try:
         refined, _ = gen_json(refine, preferred)
@@ -276,13 +275,14 @@ def generate_posts(topic, preferred=None):
         "me canceled').\n"
         "- Dry humor and honest opinions welcome.\n"
         "- Three different angles: one funny, one honest/relatable, one sharp observation.\n\n"
-        "Output ONLY a JSON array: [{\"vibe\": \"one or two words\", \"text\": \"...\"}]"
+        "Output ONLY a JSON array of 3 post strings: [\"...\", \"...\", \"...\"]"
     )
     return gen_json(prompt, preferred)
 
 
 def gen_json(prompt, preferred=None):
-    """Run the model-loop and parse a JSON array of {\"vibe\", \"text\"} objects."""
+    """Run the model-loop and parse a JSON array of reply/post strings
+    (dicts with a 'text' key are tolerated and normalized)."""
     models = TEXT_MODELS
     if preferred and preferred in TEXT_MODELS:
         models = [preferred] + [m for m in TEXT_MODELS if m != preferred]
@@ -297,7 +297,14 @@ def gen_json(prompt, preferred=None):
                     continue
                 data = json.loads(raw[start:end + 1])
                 if isinstance(data, list) and data:
-                    return data, model
+                    norm = []
+                    for item in data:
+                        if isinstance(item, str):
+                            norm.append({"text": item})
+                        elif isinstance(item, dict) and item.get("text"):
+                            norm.append(item)
+                    if norm:
+                        return norm, model
             except requests.HTTPError:
                 time.sleep(10)
             except Exception:

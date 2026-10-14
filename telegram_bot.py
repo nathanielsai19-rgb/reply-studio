@@ -54,7 +54,7 @@ def send_gif(chat, path):
 
 
 def format_replies(replies):
-    return "\n\n".join(f"{r['vibe']}\n{r['text']}" for r in replies)
+    return "\n\n".join(r["text"] for r in replies)
 
 
 def download_file(file_id, dest):

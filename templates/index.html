@@ -263,8 +263,7 @@
     for (const rep of replies) {
       const card = document.createElement('div');
       card.className = 'card';
-      card.innerHTML = '<div class="vibe">' + rep.vibe + '</div>' +
-        '<button class="copy">Copy</button>' +
+      card.innerHTML = '<button class="copy">Copy</button>' +
         '<div class="reply"></div>';
       card.querySelector('.reply').textContent = rep.text;
       card.querySelector('.copy').addEventListener('click', function () {
