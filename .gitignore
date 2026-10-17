@@ -1,6 +1,7 @@
 # secrets — never commit
 groq_key.txt
 pin.txt
+horde_key.txt
 
 # runtime junk
 uploads/

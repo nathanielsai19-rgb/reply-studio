@@ -195,11 +195,11 @@
     <div class="pane" id="pane-gif">
       <textarea id="gifprompt" placeholder="Describe the GIF, e.g. a cat breakdancing in a boxing ring"></textarea>
       <div class="mode-row">
-        <div class="mode active" data-mode="morph">Morph — 3 images crossfade</div>
         <div class="mode" data-mode="zoom">Zoom — smooth loop</div>
+        <div class="mode active" data-mode="morph">Morph — 3 images crossfade</div>
       </div>
       <button class="btn" id="ggo" style="display:block">Make GIF</button>
-      <div class="gif-hint">Usually 1-5 minutes · free crowdsourced AI workers, no signup</div>
+      <div class="gif-hint">Zoom = fast (~1-3 min) · Morph = 3 images (~5-15 min) · free crowdsourced AI workers</div>
       <div id="gifout">
         <img id="gifimg" alt="generated gif">
         <div class="gif-actions">
@@ -403,7 +403,7 @@
   const gifout = document.getElementById('gifout');
   const gifimg = document.getElementById('gifimg');
   const modes = document.querySelectorAll('.mode');
-  let gifMode = 'morph';
+  let gifMode = 'zoom';
   modes.forEach(m => m.addEventListener('click', () => {
     modes.forEach(x => x.classList.remove('active'));
     m.classList.add('active');

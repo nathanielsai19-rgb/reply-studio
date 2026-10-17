@@ -66,6 +66,13 @@ os.makedirs(STUDIO_DIR, exist_ok=True)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip() or \
     open(os.path.join(BASE, "groq_key.txt"), encoding="utf-8").read().strip()
 
+# Optional registered Stable Horde key (free signup at stablehorde.net) — jumps the
+# anonymous queue, usually 20-60s per image. Else anonymous "0000000000" (slow queue).
+HORDE_API_KEY = (os.environ.get("HORDE_API_KEY", "").strip() or
+                 (open(os.path.join(BASE, "horde_key.txt"), encoding="utf-8").read().strip()
+                  if os.path.exists(os.path.join(BASE, "horde_key.txt")) else "")
+                 ) or "0000000000"
+
 HEADERS = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
 PORT = int(os.environ.get("PORT", 5190))   # Render sets PORT; local default 5190
 
@@ -376,7 +383,7 @@ def horde_image(prompt, variation=0, count=1):
     for attempt in range(4):
         try:
             r = requests.post(HORDE_GENERATE, json=body, timeout=60,
-                              headers={"apikey": "0000000000"})
+                              headers={"apikey": HORDE_API_KEY})
             if r.status_code == 429:      # anonymous rate limit — back off
                 time.sleep(30 * (attempt + 1))
                 continue
