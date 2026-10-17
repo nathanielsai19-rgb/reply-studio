@@ -47,6 +47,8 @@ HORDE_GENERATE = "https://stablehorde.net/api/v2/generate/async"
 HORDE_STATUS = "https://stablehorde.net/api/v2/generate/status/{job_id}"
 HORDE_TIMEOUT = 420   # seconds to wait for a free anonymous worker
 GIF_SIZE = 512           # frames per gif, keeps file small enough for X
+STUDIO_SIZE = 768        # production stills — bigger for realism
+STUDIO_MODELS = ["RealVisXL V4.0", "ICBINP XL"]   # photoreal SDXL checkpoints on horde
 GIF_TTL_SECONDS = 2 * 24 * 3600
 
 app = Flask(__name__)
@@ -55,8 +57,10 @@ app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 BASE = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE, "uploads")
 GIF_DIR = os.path.join(BASE, "static", "gifs")
+STUDIO_DIR = os.path.join(BASE, "static", "studio")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(GIF_DIR, exist_ok=True)
+os.makedirs(STUDIO_DIR, exist_ok=True)
 
 # API key: GROQ_API_KEY env var, else local groq_key.txt (never committed to git)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip() or \
@@ -200,24 +204,33 @@ def generate_replies(understanding, preferred=None):
         "and/or its text).\n\n"
         "POST CONTENT:\n" + content + "\n\n"
         "Write 3 replies, each from a different person.\n\n"
-        "How to sound real:\n"
-        "- Grab a SPECIFIC detail from the post — a word, a number, a name, a moment — and "
-        "react to that. A reply that could sit under any post is banned.\n"
-        "- Text it, don't write it. Uneven case, fragments, dropped words: 'nah this is "
-        "crazy', 'bro really did that', 'he knew'. Thumbs typing fast.\n"
-        "- Land the point and stop. Cut trailing explanations and closing sentences.\n"
-        "- React, don't review. Don't restate the post, don't explain why it's funny "
-        "or impressive.\n"
-        "- Humor is dry. Not every reply is a joke; 2-word replies are valid.\n"
-        "- Never: emojis, hashtags, em-dashes, or these dead phrases — honestly, truly, "
-        "the way, imagine, living rent free, power move, fancy way of saying, "
+        "Voice rules (distilled from replies that got 100-32k impressions):\n"
+        "- Short. 2-12 words is the sweet spot. A one-word reply is valid when the post "
+        "deserves it.\n"
+        "- State the take directly. No setup lines, no 'X is unhinged' frames, no "
+        "rhetorical questions, no clever wrap.\n"
+        "- React like a person: surprise, grief, a dry joke, or quote the post and add a "
+        "deadpan comment.\n"
+        "- Lowercase casual is fine, contractions fine, 'tbh' fine. No emojis, no "
+        "hashtags, no em-dashes.\n"
+        "- Grab a SPECIFIC detail from the post — a name, a number, a moment. Never generic.\n"
+        "- When the post is sad or about loss, reply with real feeling, not wit. Short and sincere.\n"
+        "- No explanations, no advice, no moralizing. Land it and stop.\n"
+        "- Never: honestly, truly, the way, imagine, power move, living rent free, "
         "we are so back, real ones know.\n\n"
-        "Reply shapes should differ — some one-liners, some two lines, different energy "
-        "each.\n\n"
-        "Reference points for feel (for a post of a cat that knocked a TV over):\n"
-        "'cats really do run the house'\n"
-        "'rip tv'\n"
-        "'he knocked it over then just sat there like nothing happened'\n\n"
+        "This energy worked (100-32k impressions):\n"
+        "'the product was never the problem. sales was.'\n"
+        "'pain'\n"
+        "'she actually said \"stick it right in\" like it's on a checklist'\n"
+        "'city skyline looks like a pit lane backdrop'\n"
+        "'he just likes the view tbh'\n"
+        "'wait she did that mid flight'\n"
+        "'rip. my thoughts are with his family. he gave us so much joy playing walter jr.'\n"
+        "'if i win i am eating it cold. zero regrets'\n\n"
+        "This energy flopped (under 50 impressions) — avoid it:\n"
+        "'1.7k likes on a man making peace with his own mortality is unhinged'\n"
+        "'in a cold sweat hoping the feed freezes'\n"
+        "'inevitable? guess the code finally decided to surprise us this once'\n\n"
         "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
     data, model = gen_json(prompt, preferred)
@@ -230,10 +243,11 @@ def generate_replies(understanding, preferred=None):
         "- Every reply must react to a SPECIFIC detail from the post — a word, a number, "
         "a name, a moment. If a reply is generic and could sit under any post, rewrite it "
         "to grab onto something concrete from the content above.\n"
-        "- Keep voice rules: text it don't write it, uneven case and fragments ok, no "
-        "emojis, no hashtags, no em-dashes, no dead phrases (honestly, truly, the way, "
-        "imagine, power move, living rent free, we are so back, unreal, cinema), land the "
-        "point and stop, dry humor fine, each reply a different energy, some one-liners.\n"
+        "- Shorter is better — cut words. One-word replies are valid. No setup lines, no "
+        "rhetorical questions, no 'X is unhinged' frames.\n"
+        "- Keep voice rules: lowercase casual ok, no emojis, no hashtags, no em-dashes, "
+        "no dead phrases (honestly, truly, the way, imagine, power move, living rent free, "
+        "we are so back), land the point and stop, each reply a different energy.\n"
         "- If a reply is already specific and human, leave it exactly as it is.\n\n"
         "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
@@ -412,10 +426,10 @@ def make_gif(images, out_path, mode):
                    duration=110, loop=0, optimize=False, quality=85)
 
 
-def clean_old_gifs():
+def clean_old_files(directory):
     now = time.time()
-    for name in os.listdir(GIF_DIR):
-        p = os.path.join(GIF_DIR, name)
+    for name in os.listdir(directory):
+        p = os.path.join(directory, name)
         try:
             if now - os.path.getmtime(p) > GIF_TTL_SECONDS:
                 os.remove(p)
@@ -534,7 +548,7 @@ def gif():
     # keep the user's words dominant, just steer the style slightly
     full_prompt = prompt + ", vibrant colors, sharp details, no text"
     try:
-        clean_old_gifs()
+        clean_old_files(GIF_DIR)
         images = horde_images(full_prompt, 1 if mode == "zoom" else 3)
 
         name = uuid.uuid4().hex + ".gif"
