@@ -69,6 +69,8 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip() or \
 HEADERS = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
 PORT = int(os.environ.get("PORT", 5190))   # Render sets PORT; local default 5190
 
+LAST_REQUEST = {}   # debugging aid: the most recent generation, shown by /api/last
+
 
 # ---------- helpers ----------
 
@@ -224,6 +226,10 @@ def generate_replies(understanding, preferred=None):
         "But only reference details the description is CERTAIN about — if the visual "
         "description wasn't sure what an object was, don't name it.\n"
         "- When the post is sad or about loss, reply with real feeling, not wit. Short and sincere.\n"
+        "- TONE MATCH THE POST. If it's about anything serious — death, violence, crime, "
+        "illness, a shooting, a hero's story — NO jokes anywhere, and never joke about a "
+        "real person's name, looks or background. Respectful only. A serious post is not "
+        "a joke setup.\n"
         "- No explanations, no advice, no moralizing. Land it and stop.\n"
         "- Never: honestly, truly, the way, imagine, power move, living rent free, "
         "we are so back, real ones know, hit different, lowkey giving.\n\n"
@@ -258,6 +264,8 @@ def generate_replies(understanding, preferred=None):
         "- Keep voice rules: lowercase casual ok, no emojis, no hashtags, no em-dashes, "
         "no dead phrases (honestly, truly, the way, imagine, power move, living rent free, "
         "we are so back), land the point and stop, each reply a different energy.\n"
+        "- If a reply makes fun of a real person, their name or looks, or cracks a joke on "
+        "a serious post (death, violence, crime, a hero's story), rewrite it respectfully.\n"
         "- If a reply is already specific and human, leave it exactly as it is.\n\n"
         "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
@@ -520,6 +528,11 @@ def info():
     return jsonify({"lan_ip": lan_ip(), "tailscale_ip": tailscale_ip(), "port": PORT})
 
 
+@app.route("/api/last")
+def last_request():
+    return jsonify(LAST_REQUEST)
+
+
 @app.route("/api/text", methods=["POST"])
 def text_replies():
     data = request.get_json(silent=True) or {}
@@ -529,6 +542,10 @@ def text_replies():
     try:
         replies, model = generate_replies("TEXT OF THE POST:\n" + text[:6000],
                                           preferred=data.get("model"))
+        LAST_REQUEST.clear()
+        LAST_REQUEST.update({"kind": "text", "input": text[:2000],
+                             "understanding": "TEXT OF THE POST:\n" + text[:6000],
+                             "replies": replies, "model": model})
         return jsonify({"ok": True, "replies": replies, "model": model})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -604,6 +621,10 @@ def generate():
         replies, model = generate_replies(
             (f"TEXT OF THE POST:\n{post_text[:3000]}\n\n" if post_text else "") + understanding,
             preferred=request.form.get("model"))
+        LAST_REQUEST.clear()
+        LAST_REQUEST.update({"kind": kind, "input": post_text[:2000] or "(media only)",
+                             "understanding": understanding, "replies": replies,
+                             "model": model})
         return jsonify({"ok": True, "kind": kind, "understanding": understanding,
                         "replies": replies, "model": model})
     except Exception as e:
