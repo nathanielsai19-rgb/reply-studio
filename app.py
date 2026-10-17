@@ -129,13 +129,20 @@ def tailscale_ip():
 def describe_images(paths, is_video):
     """Send images in batches of 3 (qwen3.8 limit) to the Groq vision model."""
     if not is_video:
-        prompt = ("Describe this image: what/who is shown, the setting, any on-screen text "
-                  "(quote it exactly), and the mood. Be concrete and grounded in what is visible. "
-                  "Ignore watermarks.")
+        prompt = ("Describe this image carefully: what/who is shown, the setting, any "
+                  "on-screen text (quote it exactly), and the mood. Identify objects ONLY "
+                  "when you are sure — if you can't tell what something is, describe its "
+                  "shape, color and position instead of guessing a name ('a small round "
+                  "yellow object near the top', not 'a lemon'). Never invent objects, "
+                  "people or text that aren't clearly visible. Be concrete and grounded "
+                  "in what is visible. Ignore watermarks.")
     else:
         prompt = ("These are frames from a video, in chronological order, several seconds apart. "
                   "For each frame describe: what/who is shown, the setting, any on-screen text "
-                  "(quote it exactly), and the mood. Format: 'Frame N: ...'. Ignore watermarks.")
+                  "(quote it exactly), and the mood. Format: 'Frame N: ...'. Identify objects "
+                  "ONLY when you are sure — if unsure, describe shape, color and position "
+                  "instead of guessing a name. Never invent objects, people or text that "
+                  "aren't clearly visible. Ignore watermarks.")
 
     parts = []
     for i in range(0, len(paths), 3):
@@ -213,11 +220,13 @@ def generate_replies(understanding, preferred=None):
         "deadpan comment.\n"
         "- Lowercase casual is fine, contractions fine, 'tbh' fine. No emojis, no "
         "hashtags, no em-dashes.\n"
-        "- Grab a SPECIFIC detail from the post — a name, a number, a moment. Never generic.\n"
+        "- Grab a SPECIFIC detail from the post — a name, a number, a moment. Never generic. "
+        "But only reference details the description is CERTAIN about — if the visual "
+        "description wasn't sure what an object was, don't name it.\n"
         "- When the post is sad or about loss, reply with real feeling, not wit. Short and sincere.\n"
         "- No explanations, no advice, no moralizing. Land it and stop.\n"
         "- Never: honestly, truly, the way, imagine, power move, living rent free, "
-        "we are so back, real ones know.\n\n"
+        "we are so back, real ones know, hit different, lowkey giving.\n\n"
         "This energy worked (100-32k impressions):\n"
         "'the product was never the problem. sales was.'\n"
         "'pain'\n"
@@ -242,7 +251,8 @@ def generate_replies(understanding, preferred=None):
         "Fix them:\n"
         "- Every reply must react to a SPECIFIC detail from the post — a word, a number, "
         "a name, a moment. If a reply is generic and could sit under any post, rewrite it "
-        "to grab onto something concrete from the content above.\n"
+        "to grab onto something concrete from the content above. Only reference details "
+        "the description is certain about — never name an object the description guessed at.\n"
         "- Shorter is better — cut words. One-word replies are valid. No setup lines, no "
         "rhetorical questions, no 'X is unhinged' frames.\n"
         "- Keep voice rules: lowercase casual ok, no emojis, no hashtags, no em-dashes, "
