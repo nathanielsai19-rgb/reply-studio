@@ -212,13 +212,32 @@ def transcribe(path, workdir):
     return "(transcription failed)"
 
 
-def generate_replies(understanding, preferred=None):
+def generate_replies(understanding, preferred=None, rule=None, top_reply=None):
     content = understanding[:6000]
+    rule_block = ""
+    if rule:
+        rule_block = ("\n\nOVERRIDING RULE — every reply MUST obey this, even if it "
+                      "conflicts with anything else in these instructions:\n"
+                      + rule.strip()[:400] + "\n")
+    top_reply_block = ""
+    if top_reply:
+        top_reply_block = (
+            "\n\nHIGHEST-ENGAGEMENT REPLY (the reply under this post that performed "
+            "best):\n\"" + top_reply.strip()[:600] + "\"\n"
+            "This reply earned massive engagement because of HOW it connected to the "
+            "post: it latched onto something specific the post said or showed, with a "
+            "take on that detail that was instantly relatable, funny or true. Study "
+            "that connection carefully.\n"
+            "Now BEAT it: write your 3 replies so each one connects to THIS post just "
+            "as tightly — or tighter — with a sharper, more original take than this "
+            "reply had. Never reuse its words, its joke or its exact idea.\n"
+        )
     prompt = (
         "You are about to reply on X (Twitter) as a real person who just saw this post. "
         "Below is the post's content (visual description, narration transcript, "
         "and/or its text).\n\n"
-        "POST CONTENT:\n" + content + "\n\n"
+        "POST CONTENT:\n" + content + "\n"
+        + rule_block + top_reply_block + "\n"
         "Write 3 replies, each from a different person.\n\n"
         "Voice rules (distilled from replies that got 100-32k impressions):\n"
         "- HAVE AN OPINION. Every reply must carry a real point of view about the post or "
@@ -263,7 +282,8 @@ def generate_replies(understanding, preferred=None):
     # refinement pass: make every reply actually react to THIS content
     refine = (
         "You are tightening replies to a post on X (Twitter). Here is what the post contains:\n\n"
-        "POST CONTENT:\n" + content[:3000] + "\n\n"
+        "POST CONTENT:\n" + content[:3000] + "\n"
+        + rule_block + top_reply_block + "\n"
         "These draft replies exist:\n" + json.dumps(data, ensure_ascii=False) + "\n\n"
         "Fix them:\n"
         "- Every reply must react to a SPECIFIC detail from the post — a word, a number, "
@@ -280,6 +300,10 @@ def generate_replies(understanding, preferred=None):
         "reply a different energy.\n"
         "- If a reply makes fun of a real person, their name or looks, or cracks a joke on "
         "a serious post (death, violence, crime, a hero's story), rewrite it respectfully.\n"
+        + ("- If a reply's connection to the post is weaker or vaguer than the "
+           "high-engagement reply's, deepen it. The goal is replies that BEAT that "
+           "reply — tighter connection, sharper take — but never reuse its words, "
+           "joke or exact idea.\n" if top_reply else "") +
         "- If a reply is already specific and human, leave it exactly as it is.\n\n"
         "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
@@ -553,12 +577,16 @@ def text_replies():
     text = (data.get("text") or "").strip()
     if not text:
         return jsonify({"error": "paste the post text first"}), 400
+    rule = (data.get("rule") or "").strip() or None
+    top_reply = (data.get("top_reply") or "").strip() or None
     try:
         replies, model = generate_replies("TEXT OF THE POST:\n" + text[:6000],
-                                          preferred=data.get("model"))
+                                          preferred=data.get("model"),
+                                          rule=rule, top_reply=top_reply)
         LAST_REQUEST.clear()
         LAST_REQUEST.update({"kind": "text", "input": text[:2000],
                              "understanding": "TEXT OF THE POST:\n" + text[:6000],
+                             "rule": rule, "top_reply": top_reply,
                              "replies": replies, "model": model})
         return jsonify({"ok": True, "replies": replies, "model": model})
     except Exception as e:
@@ -606,6 +634,8 @@ def generate():
     if not f:
         return jsonify({"error": "no file received"}), 400
     post_text = (request.form.get("text") or "").strip()
+    rule = (request.form.get("rule") or "").strip() or None
+    top_reply = (request.form.get("top_reply") or "").strip() or None
 
     workdir = os.path.join(UPLOAD_DIR, uuid.uuid4().hex)
     os.makedirs(workdir, exist_ok=True)
@@ -634,10 +664,12 @@ def generate():
 
         replies, model = generate_replies(
             (f"TEXT OF THE POST:\n{post_text[:3000]}\n\n" if post_text else "") + understanding,
-            preferred=request.form.get("model"))
+            preferred=request.form.get("model"),
+            rule=rule, top_reply=top_reply)
         LAST_REQUEST.clear()
         LAST_REQUEST.update({"kind": kind, "input": post_text[:2000] or "(media only)",
-                             "understanding": understanding, "replies": replies,
+                             "understanding": understanding, "rule": rule,
+                             "top_reply": top_reply, "replies": replies,
                              "model": model})
         return jsonify({"ok": True, "kind": kind, "understanding": understanding,
                         "replies": replies, "model": model})

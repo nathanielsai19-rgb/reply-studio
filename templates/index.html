@@ -143,6 +143,12 @@
   <div class="sub">Short replies for posts, images &amp; videos · makes GIFs too</div>
 
   <div class="wrap">
+    <div id="replyprefs">
+      <textarea id="rulebox" style="min-height:64px; margin-bottom:10px"
+        placeholder="Optional: a rule every reply must obey — e.g. &ldquo;never mention his weight&rdquo; or &ldquo;keep replies under 10 words&rdquo;"></textarea>
+      <textarea id="topreply" style="min-height:64px; margin-bottom:14px"
+        placeholder="Optional: paste the reply that got the highest engagement under this post — the AI studies how it connected to the post, then generates replies that beat it (without copying it)"></textarea>
+    </div>
     <div class="tabs">
       <div class="tab active" data-pane="media">Media</div>
       <div class="tab" data-pane="text">Text</div>
@@ -232,8 +238,23 @@
     Object.values(panes).forEach(p => p.classList.remove('active'));
     t.classList.add('active');
     panes[t.dataset.pane].classList.add('active');
+    replyprefs.style.display = (t.dataset.pane === 'media' || t.dataset.pane === 'text') ? 'block' : 'none';
     hideAll();
   }));
+
+  // ---- reply prefs: a rule to obey + the post's highest-engagement reply to study
+  //      (applies to Media + Text panes only) ----
+  const replyprefs = document.getElementById('replyprefs');
+  const rulebox = document.getElementById('rulebox');
+  const topreply = document.getElementById('topreply');
+  try { rulebox.value = localStorage.getItem('replyRule') || ''; } catch (e) {}
+  try { topreply.value = localStorage.getItem('replyTop') || ''; } catch (e) {}
+  rulebox.addEventListener('input', () => {
+    try { localStorage.setItem('replyRule', rulebox.value); } catch (e) {}
+  });
+  topreply.addEventListener('input', () => {
+    try { localStorage.setItem('replyTop', topreply.value); } catch (e) {}
+  });
 
   const statusBox = document.getElementById('status');
   const statusText = document.getElementById('statustext');
@@ -327,6 +348,8 @@
       const fd = new FormData();
       fd.append('file', currentFile);
       if (mediatext.value.trim()) fd.append('text', mediatext.value.trim());
+      if (rulebox.value.trim()) fd.append('rule', rulebox.value.trim());
+      if (topreply.value.trim()) fd.append('top_reply', topreply.value.trim());
       fd.append('model', mvoice);
       const r = await fetch('/api/generate', { method: 'POST', body: fd });
       const data = await r.json();
@@ -361,7 +384,8 @@
       const r = await fetch('/api/text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: tweet.value, model: voice })
+        body: JSON.stringify({ text: tweet.value, model: voice, rule: rulebox.value,
+                               top_reply: topreply.value })
       });
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
