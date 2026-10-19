@@ -66,6 +66,18 @@
   }
   textarea:focus { border-color: var(--accent); }
   textarea::placeholder { color: #55607a; }
+  .top-attach { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .top-attach button {
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    font-size: .8rem; padding: 7px 12px; border-radius: 8px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .top-attach button:hover { border-color: var(--accent); color: var(--text); }
+  #topattachpreview {
+    max-width: 90px; max-height: 90px; border-radius: 8px;
+    border: 1px solid var(--border); background: #000;
+  }
+  #topattachname { color: var(--muted); font-size: .8rem; word-break: break-all; }
   .mode-row { display: flex; gap: 8px; margin-top: 12px; }
   .mode {
     flex: 1; padding: 9px 4px; background: var(--panel); border: 1px solid var(--border);
@@ -148,6 +160,13 @@
         placeholder="Optional: a rule every reply must obey — e.g. &ldquo;never mention his weight&rdquo; or &ldquo;keep replies under 10 words&rdquo;"></textarea>
       <textarea id="topreply" style="min-height:64px; margin-bottom:14px"
         placeholder="Optional: paste the reply that got the highest engagement under this post — the AI studies how it connected to the post, then generates replies that beat it (without copying it)"></textarea>
+      <div class="top-attach">
+        <button type="button" id="topattachbtn">+ Attach the reply's GIF/image</button>
+        <input type="file" id="topattach" accept="image/*" hidden>
+        <img id="topattachpreview" alt="attached gif/image" style="display:none">
+        <span id="topattachname"></span>
+        <button type="button" id="topattachclear" style="display:none" title="remove attachment">×</button>
+      </div>
     </div>
     <div class="tabs">
       <div class="tab active" data-pane="media">Media</div>
@@ -256,6 +275,30 @@
     try { localStorage.setItem('replyTop', topreply.value); } catch (e) {}
   });
 
+  // ---- attach the top reply's GIF/image so the vision model reads it too ----
+  const topattachbtn = document.getElementById('topattachbtn');
+  const topattach = document.getElementById('topattach');
+  const topattachpreview = document.getElementById('topattachpreview');
+  const topattachname = document.getElementById('topattachname');
+  const topattachclear = document.getElementById('topattachclear');
+  let topAttachFile = null;
+  topattachbtn.addEventListener('click', () => topattach.click());
+  topattach.addEventListener('change', () => {
+    if (!topattach.files[0]) return;
+    topAttachFile = topattach.files[0];
+    topattachname.textContent = topAttachFile.name;
+    topattachpreview.src = URL.createObjectURL(topAttachFile);
+    topattachpreview.style.display = 'inline-block';
+    topattachclear.style.display = 'inline-block';
+  });
+  topattachclear.addEventListener('click', () => {
+    topAttachFile = null;
+    topattach.value = '';
+    topattachname.textContent = '';
+    topattachpreview.style.display = 'none';
+    topattachclear.style.display = 'none';
+  });
+
   const statusBox = document.getElementById('status');
   const statusText = document.getElementById('statustext');
   const errBox = document.getElementById('error');
@@ -350,6 +393,7 @@
       if (mediatext.value.trim()) fd.append('text', mediatext.value.trim());
       if (rulebox.value.trim()) fd.append('rule', rulebox.value.trim());
       if (topreply.value.trim()) fd.append('top_reply', topreply.value.trim());
+      if (topAttachFile) fd.append('top_gif', topAttachFile);
       fd.append('model', mvoice);
       const r = await fetch('/api/generate', { method: 'POST', body: fd });
       const data = await r.json();
@@ -381,12 +425,13 @@
     tgo.disabled = true;
     working('Writing replies…');
     try {
-      const r = await fetch('/api/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: tweet.value, model: voice, rule: rulebox.value,
-                               top_reply: topreply.value })
-      });
+      const fd = new FormData();
+      fd.append('text', tweet.value);
+      fd.append('model', voice);
+      if (rulebox.value.trim()) fd.append('rule', rulebox.value.trim());
+      if (topreply.value.trim()) fd.append('top_reply', topreply.value.trim());
+      if (topAttachFile) fd.append('top_gif', topAttachFile);
+      const r = await fetch('/api/text', { method: 'POST', body: fd });
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
       renderReplies(data.replies);

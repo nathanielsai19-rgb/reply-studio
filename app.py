@@ -212,7 +212,26 @@ def transcribe(path, workdir):
     return "(transcription failed)"
 
 
-def generate_replies(understanding, preferred=None, rule=None, top_reply=None):
+def describe_top_attachment(path):
+    """Describe a GIF/image attached to the top-engagement reply.
+    GIFs: up to 3 frames (start/middle/end) so the animation's point comes across."""
+    workdir = os.path.dirname(path)
+    if os.path.splitext(path)[1].lower() == ".gif":
+        out = os.path.join(workdir, "gf%d.jpg")
+        run(["ffmpeg", "-y", "-v", "error", "-i", path,
+             "-vf", "fps=1,scale='min(512,iw)':-2", "-q:v", "4", out])
+        frames = sorted(glob.glob(os.path.join(workdir, "gf*.jpg")))
+        if len(frames) > 3:
+            frames = [frames[0], frames[len(frames) // 2], frames[-1]]
+        return describe_images(frames, is_video=True)
+    jpg = os.path.join(workdir, "top.jpg")
+    run(["ffmpeg", "-y", "-v", "error", "-i", path,
+         "-vf", "scale='min(512,iw)':-2", "-q:v", "4", jpg])
+    return describe_images([jpg], is_video=False)
+
+
+def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
+                     top_reply_visual=None):
     content = understanding[:6000]
     rule_block = ""
     if rule:
@@ -220,14 +239,21 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None):
                       "conflicts with anything else in these instructions:\n"
                       + rule.strip()[:400] + "\n")
     top_reply_block = ""
-    if top_reply:
+    if top_reply or top_reply_visual:
+        parts = []
+        if top_reply:
+            parts.append("The reply text:\n\"" + top_reply.strip()[:600] + "\"")
+        if top_reply_visual:
+            parts.append("The reply also had this GIF/image attached:\n"
+                         + top_reply_visual[:1500])
         top_reply_block = (
             "\n\nHIGHEST-ENGAGEMENT REPLY (the reply under this post that performed "
-            "best):\n\"" + top_reply.strip()[:600] + "\"\n"
+            "best):\n" + "\n\n".join(parts) + "\n"
             "This reply earned massive engagement because of HOW it connected to the "
             "post: it latched onto something specific the post said or showed, with a "
-            "take on that detail that was instantly relatable, funny or true. Study "
-            "that connection carefully.\n"
+            "take on that detail that was instantly relatable, funny or true. The "
+            "attached GIF/image is part of why it landed — read the text and the "
+            "visual as one reply, and factor the visual's role into the connection.\n"
             "Now BEAT it: write your 3 replies so each one connects to THIS post just "
             "as tightly — or tighter — with a sharper, more original take than this "
             "reply had. Never reuse its words, its joke or its exact idea.\n"
@@ -573,20 +599,41 @@ def last_request():
 
 @app.route("/api/text", methods=["POST"])
 def text_replies():
+    # accepts JSON or multipart form (the UI sends form so it can carry the top-reply GIF)
     data = request.get_json(silent=True) or {}
-    text = (data.get("text") or "").strip()
+
+    def field(name):
+        v = request.form.get(name) or data.get(name)
+        return (v or "").strip() or None
+
+    text = field("text")
     if not text:
         return jsonify({"error": "paste the post text first"}), 400
-    rule = (data.get("rule") or "").strip() or None
-    top_reply = (data.get("top_reply") or "").strip() or None
+    rule = field("rule")
+    top_reply = field("top_reply")
+    top_visual = None
+    f = request.files.get("top_gif")
+    if f:
+        workdir = os.path.join(UPLOAD_DIR, uuid.uuid4().hex)
+        os.makedirs(workdir, exist_ok=True)
+        try:
+            src = os.path.join(workdir, secure_filename(f.filename) or "top.gif")
+            f.save(src)
+            top_visual = describe_top_attachment(src)
+        except Exception:
+            top_visual = "(the attached visual couldn't be read)"
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
     try:
         replies, model = generate_replies("TEXT OF THE POST:\n" + text[:6000],
-                                          preferred=data.get("model"),
-                                          rule=rule, top_reply=top_reply)
+                                          preferred=field("model"),
+                                          rule=rule, top_reply=top_reply,
+                                          top_reply_visual=top_visual)
         LAST_REQUEST.clear()
         LAST_REQUEST.update({"kind": "text", "input": text[:2000],
                              "understanding": "TEXT OF THE POST:\n" + text[:6000],
                              "rule": rule, "top_reply": top_reply,
+                             "top_reply_visual": top_visual,
                              "replies": replies, "model": model})
         return jsonify({"ok": True, "replies": replies, "model": model})
     except Exception as e:
@@ -636,6 +683,7 @@ def generate():
     post_text = (request.form.get("text") or "").strip()
     rule = (request.form.get("rule") or "").strip() or None
     top_reply = (request.form.get("top_reply") or "").strip() or None
+    top_gif_file = request.files.get("top_gif")
 
     workdir = os.path.join(UPLOAD_DIR, uuid.uuid4().hex)
     os.makedirs(workdir, exist_ok=True)
@@ -662,14 +710,25 @@ def generate():
         else:
             return jsonify({"error": f"unsupported file type: {ext or 'unknown'}"}), 400
 
+        top_visual = None
+        if top_gif_file:
+            try:
+                tsrc = os.path.join(workdir,
+                                    secure_filename(top_gif_file.filename) or "topgif")
+                top_gif_file.save(tsrc)
+                top_visual = describe_top_attachment(tsrc)
+            except Exception:
+                top_visual = "(the attached visual couldn't be read)"
+
         replies, model = generate_replies(
             (f"TEXT OF THE POST:\n{post_text[:3000]}\n\n" if post_text else "") + understanding,
             preferred=request.form.get("model"),
-            rule=rule, top_reply=top_reply)
+            rule=rule, top_reply=top_reply, top_reply_visual=top_visual)
         LAST_REQUEST.clear()
         LAST_REQUEST.update({"kind": kind, "input": post_text[:2000] or "(media only)",
                              "understanding": understanding, "rule": rule,
-                             "top_reply": top_reply, "replies": replies,
+                             "top_reply": top_reply,
+                             "top_reply_visual": top_visual, "replies": replies,
                              "model": model})
         return jsonify({"ok": True, "kind": kind, "understanding": understanding,
                         "replies": replies, "model": model})
