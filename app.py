@@ -273,9 +273,13 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
         top_connection = analyze_top_connection(content, joined)
         conn = ("\nCONNECTION: " + top_connection + "\n"
                 "Every one of your 3 replies must grab onto that SAME element of the "
-                "post, with a different, sharper, more original take on it. A reply "
-                "that drifts to another element, or connects more vaguely than this "
-                "one did, is a failure.\n" if top_connection else
+                "post. A reply that drifts to another element, or connects more "
+                "vaguely than this one did, is a failure.\n"
+                "Each reply must carry a real point of view about that element — "
+                "something people can agree with or feel, never just an observation.\n"
+                "Don't all take the same angle: vary the energy, and mix very short "
+                "replies with longer ones, like different real people chiming in.\n"
+                if top_connection else
                 "\nStudy how this reply connected to the post and write your 3 "
                 "replies to connect just as tightly.\n")
         top_reply_block = (
@@ -338,11 +342,15 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
         + rule_block + top_reply_block + "\n"
         "These draft replies exist:\n" + json.dumps(data, ensure_ascii=False) + "\n\n"
         "Fix them:\n"
+        "- Change as little as possible. Most drafts are already fine — only touch a "
+        "reply when it clearly breaks one of the rules below, and keep its voice, "
+        "wording and rhythm otherwise.\n"
         "- Every reply must react to a SPECIFIC detail from the post — a word, a number, "
         "a name, a moment. If a reply is generic and could sit under any post, rewrite it "
         "to grab onto something concrete from the content above. Only reference details "
         "the description is certain about — never name an object the description guessed at.\n"
-        "- Shorter is better — cut words. One-word replies are valid. No setup lines, no "
+        "- Shorter is better — cut words, but never cut the opinion away. One-word "
+        "replies are valid. No setup lines, no "
         "rhetorical questions, no 'X is unhinged' frames.\n"
         "- If a reply is just a neutral observation or question with no point of view, "
         "rewrite it to carry an actual opinion about the post.\n"
@@ -354,13 +362,14 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
         "a serious post (death, violence, crime, a hero's story), rewrite it respectfully.\n"
         + ("- If a reply drifted to a different element of the post than the "
            "CONNECTION describes, or connects more vaguely, rewrite it to grab "
-           "that same element with a sharper, more original take — never reuse "
-           "the top reply's words, joke or exact idea.\n" if top_reply else "") +
+           "that same element.\n"
+           "- Never reuse the top reply's words, joke or exact idea.\n" if top_reply else "") +
         "- If a reply is already specific and human, leave it exactly as it is.\n\n"
         "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
     try:
-        refined, _ = gen_json(refine, preferred)
+        # checker pass — near the draft temp so the voice survives; lazy by design
+        refined, _ = gen_json(refine, preferred, temperature=0.9)
         if refined:
             data = refined
     except Exception:
@@ -402,7 +411,7 @@ def generate_posts(topic, preferred=None):
     return gen_json(prompt, preferred)
 
 
-def gen_json(prompt, preferred=None):
+def gen_json(prompt, preferred=None, temperature=0.95):
     """Run the model-loop and parse a JSON array of reply/post strings
     (dicts with a 'text' key are tolerated and normalized)."""
     models = TEXT_MODELS
@@ -412,7 +421,7 @@ def gen_json(prompt, preferred=None):
         for _ in range(2):
             try:
                 raw = groq_chat([{"role": "user", "content": prompt}], model,
-                                temperature=0.95, max_tokens=800)
+                                temperature=temperature, max_tokens=800)
                 raw = raw.replace("```json", "").replace("```", "")
                 start, end = raw.find("["), raw.rfind("]")
                 if start == -1 or end == -1:
