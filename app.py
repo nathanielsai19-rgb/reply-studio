@@ -230,6 +230,28 @@ def describe_top_attachment(path):
     return describe_images([jpg], is_video=False)
 
 
+def analyze_top_connection(content, top_parts):
+    """One-sentence read of how the top reply connected to the post — the exact
+    element it grabbed and what its take did with it. Every generated reply is
+    then anchored to this same connection point."""
+    prompt = (
+        "Here is a post and the reply under it that earned the most engagement.\n\n"
+        "POST:\n" + content[:3000] + "\n\n"
+        "TOP REPLY:\n" + top_parts + "\n\n"
+        "Answer in ONE sentence: what exact element of the post did this reply grab "
+        "onto (a line, a detail, a number, a feeling, an implied idea), and what did "
+        "its take DO with that element (agree hard, reframe it, expose the subtext, "
+        "stretch it to an extreme, make it personal)?"
+    )
+    for model in TEXT_MODELS:
+        try:
+            return groq_chat([{"role": "user", "content": prompt}], model,
+                             temperature=0.3, max_tokens=200).strip()
+        except Exception:
+            continue
+    return ""
+
+
 def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
                      top_reply_visual=None):
     content = understanding[:6000]
@@ -239,6 +261,7 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
                       "conflicts with anything else in these instructions:\n"
                       + rule.strip()[:400] + "\n")
     top_reply_block = ""
+    top_connection = ""
     if top_reply or top_reply_visual:
         parts = []
         if top_reply:
@@ -246,17 +269,20 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
         if top_reply_visual:
             parts.append("The reply also had this GIF/image attached:\n"
                          + top_reply_visual[:1500])
+        joined = "\n\n".join(parts)
+        top_connection = analyze_top_connection(content, joined)
+        conn = ("\nCONNECTION: " + top_connection + "\n"
+                "Every one of your 3 replies must grab onto that SAME element of the "
+                "post, with a different, sharper, more original take on it. A reply "
+                "that drifts to another element, or connects more vaguely than this "
+                "one did, is a failure.\n" if top_connection else
+                "\nStudy how this reply connected to the post and write your 3 "
+                "replies to connect just as tightly.\n")
         top_reply_block = (
             "\n\nHIGHEST-ENGAGEMENT REPLY (the reply under this post that performed "
-            "best):\n" + "\n\n".join(parts) + "\n"
-            "This reply earned massive engagement because of HOW it connected to the "
-            "post: it latched onto something specific the post said or showed, with a "
-            "take on that detail that was instantly relatable, funny or true. The "
-            "attached GIF/image is part of why it landed — read the text and the "
-            "visual as one reply, and factor the visual's role into the connection.\n"
-            "Now BEAT it: write your 3 replies so each one connects to THIS post just "
-            "as tightly — or tighter — with a sharper, more original take than this "
-            "reply had. Never reuse its words, its joke or its exact idea.\n"
+            "best):\n" + joined + "\n"
+            + conn +
+            "Never reuse its words, its joke or its exact idea.\n"
         )
     prompt = (
         "You are about to reply on X (Twitter) as a real person who just saw this post. "
@@ -326,10 +352,10 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
         "reply a different energy.\n"
         "- If a reply makes fun of a real person, their name or looks, or cracks a joke on "
         "a serious post (death, violence, crime, a hero's story), rewrite it respectfully.\n"
-        + ("- If a reply's connection to the post is weaker or vaguer than the "
-           "high-engagement reply's, deepen it. The goal is replies that BEAT that "
-           "reply — tighter connection, sharper take — but never reuse its words, "
-           "joke or exact idea.\n" if top_reply else "") +
+        + ("- If a reply drifted to a different element of the post than the "
+           "CONNECTION describes, or connects more vaguely, rewrite it to grab "
+           "that same element with a sharper, more original take — never reuse "
+           "the top reply's words, joke or exact idea.\n" if top_reply else "") +
         "- If a reply is already specific and human, leave it exactly as it is.\n\n"
         "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
@@ -339,7 +365,7 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
             data = refined
     except Exception:
         pass
-    return data, model
+    return data, model, top_connection
 
 
 def generate_posts(topic, preferred=None):
@@ -625,17 +651,20 @@ def text_replies():
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
     try:
-        replies, model = generate_replies("TEXT OF THE POST:\n" + text[:6000],
-                                          preferred=field("model"),
-                                          rule=rule, top_reply=top_reply,
-                                          top_reply_visual=top_visual)
+        replies, model, top_connection = generate_replies(
+            "TEXT OF THE POST:\n" + text[:6000],
+            preferred=field("model"),
+            rule=rule, top_reply=top_reply,
+            top_reply_visual=top_visual)
         LAST_REQUEST.clear()
         LAST_REQUEST.update({"kind": "text", "input": text[:2000],
                              "understanding": "TEXT OF THE POST:\n" + text[:6000],
                              "rule": rule, "top_reply": top_reply,
                              "top_reply_visual": top_visual,
+                             "top_connection": top_connection,
                              "replies": replies, "model": model})
-        return jsonify({"ok": True, "replies": replies, "model": model})
+        return jsonify({"ok": True, "replies": replies, "model": model,
+                        "connection": top_connection})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -720,7 +749,7 @@ def generate():
             except Exception:
                 top_visual = "(the attached visual couldn't be read)"
 
-        replies, model = generate_replies(
+        replies, model, top_connection = generate_replies(
             (f"TEXT OF THE POST:\n{post_text[:3000]}\n\n" if post_text else "") + understanding,
             preferred=request.form.get("model"),
             rule=rule, top_reply=top_reply, top_reply_visual=top_visual)
@@ -728,9 +757,11 @@ def generate():
         LAST_REQUEST.update({"kind": kind, "input": post_text[:2000] or "(media only)",
                              "understanding": understanding, "rule": rule,
                              "top_reply": top_reply,
-                             "top_reply_visual": top_visual, "replies": replies,
+                             "top_reply_visual": top_visual,
+                             "top_connection": top_connection, "replies": replies,
                              "model": model})
         return jsonify({"ok": True, "kind": kind, "understanding": understanding,
+                        "connection": top_connection,
                         "replies": replies, "model": model})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

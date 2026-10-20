@@ -83,7 +83,7 @@ def handle_text(msg, text):
         else:
             send_text(msg["chat"]["id"], HELP)
         return
-    replies, _ = generate_replies("TEXT OF THE POST:\n" + text[:6000])
+    replies, _, _ = generate_replies("TEXT OF THE POST:\n" + text[:6000])
     send_text(msg["chat"]["id"], format_replies(replies))
 
 
@@ -124,7 +124,7 @@ def handle_media(msg, is_video):
         caption = (msg.get("caption") or "").strip()
         if caption:
             understanding = f"TEXT OF THE POST:\n{caption[:3000]}\n\n" + understanding
-        replies, _ = generate_replies(understanding)
+        replies, _, _ = generate_replies(understanding)
         send_text(chat, format_replies(replies))
     except Exception as e:
         send_text(chat, f"couldn't read that one: {e}")

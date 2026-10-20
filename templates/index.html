@@ -399,7 +399,8 @@
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
       renderReplies(data.replies);
-      understanding.textContent = data.understanding;
+      understanding.textContent = (data.connection
+        ? 'TOP REPLY CONNECTION:\n' + data.connection + '\n\n' : '') + data.understanding;
       document.querySelector('#results details').style.display = 'block';
     } catch (e) { fail(e); }
     finally { statusBox.style.display = 'none'; goBtn.disabled = false; }
@@ -435,7 +436,12 @@
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP ' + r.status));
       renderReplies(data.replies);
-      document.querySelector('#results details').style.display = 'none';
+      if (data.connection) {
+        understanding.textContent = 'TOP REPLY CONNECTION:\n' + data.connection;
+        document.querySelector('#results details').style.display = 'block';
+      } else {
+        document.querySelector('#results details').style.display = 'none';
+      }
     } catch (e) { fail(e); }
     finally { statusBox.style.display = 'none'; tgo.disabled = false; }
   });
