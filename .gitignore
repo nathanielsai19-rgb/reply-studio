@@ -8,5 +8,6 @@ uploads/
 static/gifs/
 _app.log
 offset.txt
+replies_log.jsonl
 __pycache__/
 *.pyc

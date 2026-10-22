@@ -16,6 +16,7 @@ import hmac
 import json
 import os
 import random
+import re
 import shutil
 import socket
 import subprocess
@@ -296,6 +297,11 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
         + rule_block + top_reply_block + "\n"
         "Write 3 replies, each from a different person.\n\n"
         "Voice rules (distilled from replies that got 100-32k impressions):\n"
+        "- MAKE SENSE (most important rule). Every reply must be sensible and reasonable "
+        "to someone who just saw this same post. Never invent details, numbers, people, "
+        "places or events the post doesn't contain. Never contradict what the post shows "
+        "or says. If a reply would make a reader go 'what does that even mean', it's a "
+        "failure. A plain sensible reply always beats a clever nonsense one.\n"
         "- HAVE AN OPINION. Every reply must carry a real point of view about the post or "
         "its subject — agree, disagree, judge, reframe, take a side. A reply with no "
         "opinion is a failure.\n"
@@ -335,6 +341,12 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
         "Output ONLY a JSON array of 3 reply strings: [\"...\", \"...\", \"...\"]"
     )
     data, model = gen_json(prompt, preferred)
+    # deterministic enforcement: hard rules are checked in code, not trusted to
+    # the prompt — regen the batch up to 2x before any model pass touches it
+    for _ in range(2):
+        if not any(reply_violation(r["text"]) for r in data):
+            break
+        data, model = gen_json(prompt, preferred)
     # refinement pass: make every reply actually react to THIS content
     refine = (
         "You are tightening replies to a post on X (Twitter). Here is what the post contains:\n\n"
@@ -342,9 +354,15 @@ def generate_replies(understanding, preferred=None, rule=None, top_reply=None,
         + rule_block + top_reply_block + "\n"
         "These draft replies exist:\n" + json.dumps(data, ensure_ascii=False) + "\n\n"
         "Fix them:\n"
-        "- Change as little as possible. Most drafts are already fine — only touch a "
-        "reply when it clearly breaks one of the rules below, and keep its voice, "
-        "wording and rhythm otherwise.\n"
+        "- MOST IMPORTANT — COMMON SENSE: every reply must make sense to someone who "
+        "saw this same post. If a reply invents a detail, number, person, place or "
+        "event that isn't in the content above, contradicts the post, or would make a "
+        "reader go 'what does that even mean', rewrite it so it makes sense. This rule "
+        "overrides 'change as little as possible' — a reply that doesn't make sense is "
+        "always fixed, even at the cost of some punch.\n"
+        "- Change as little as possible otherwise. Most drafts are already fine — only "
+        "touch a reply when it clearly breaks one of the rules below, and keep its "
+        "voice, wording and rhythm otherwise.\n"
         "- Every reply must react to a SPECIFIC detail from the post — a word, a number, "
         "a name, a moment. If a reply is generic and could sit under any post, rewrite it "
         "to grab onto something concrete from the content above. Only reference details "
@@ -427,20 +445,68 @@ def gen_json(prompt, preferred=None, temperature=0.95):
                 if start == -1 or end == -1:
                     continue
                 data = json.loads(raw[start:end + 1])
-                if isinstance(data, list) and data:
+                if isinstance(data, list) and len(data) == 3:
                     norm = []
                     for item in data:
                         if isinstance(item, str):
                             norm.append({"text": item})
                         elif isinstance(item, dict) and item.get("text"):
                             norm.append(item)
-                    if norm:
+                    if len(norm) == 3:
                         return norm, model
             except requests.HTTPError:
                 time.sleep(10)
             except Exception:
                 break
     raise RuntimeError("generation failed — try again")
+
+
+# ---------- deterministic reply filters (prompt rules alone are not enough) ----------
+
+BANNED_TELLS = [
+    "honestly", "truly", "the way", "imagine", "power move", "living rent free",
+    "we are so back", "real ones know", "hit different", "lowkey giving",
+    "let that sink in", "chef's kiss", "it's giving", "no cap", "bestie",
+    "say it louder", "i said what i said", "rent free", "pov", "hot take",
+    "unpopular opinion", "am i the only one", "reminder that",
+    "nobody is talking about",
+]
+
+EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\U00002600-\U000027BF️‍]")
+
+MAX_REPLY_WORDS = 28   # winners top out around 20 (the walter jr. loss reply)
+
+
+def reply_violation(text):
+    """Deterministic hard-rule check on one reply. Returns the reason or None.
+    The prompt asks nicely; this actually enforces."""
+    t = text.lower()
+    for tell in BANNED_TELLS:
+        if re.search(r"(?<![a-z])" + re.escape(tell) + r"(?![a-z])", t):
+            return f"banned phrase: {tell}"
+    if EMOJI_RE.search(text):
+        return "emoji"
+    if "—" in text or "–" in text:
+        return "em-dash"
+    if re.search(r"(^|\s)#\w", text):
+        return "hashtag"
+    words = re.findall(r"[a-zA-Z']+", text)
+    if len(words) > MAX_REPLY_WORDS:
+        return f"{len(words)} words — too long"
+    return None
+
+
+def log_generation(kind, replies, model, extra=None):
+    """Append every generation to replies_log.jsonl so quality can be judged
+    against real engagement numbers later, not guessed in the dark."""
+    try:
+        entry = {"ts": time.strftime("%Y-%m-%d %H:%M"), "kind": kind,
+                 "model": model, "replies": [r["text"] for r in replies]}
+        entry.update(extra or {})
+        with open(os.path.join(BASE, "replies_log.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 # ---------- gif helpers ----------
@@ -672,6 +738,9 @@ def text_replies():
                              "top_reply_visual": top_visual,
                              "top_connection": top_connection,
                              "replies": replies, "model": model})
+        log_generation("text", replies, model,
+                       {"input": text[:300], "rule": rule, "top_reply": top_reply,
+                        "connection": top_connection})
         return jsonify({"ok": True, "replies": replies, "model": model,
                         "connection": top_connection})
     except Exception as e:
@@ -769,6 +838,9 @@ def generate():
                              "top_reply_visual": top_visual,
                              "top_connection": top_connection, "replies": replies,
                              "model": model})
+        log_generation(kind, replies, model,
+                       {"input": post_text[:300], "rule": rule, "top_reply": top_reply,
+                        "connection": top_connection})
         return jsonify({"ok": True, "kind": kind, "understanding": understanding,
                         "connection": top_connection,
                         "replies": replies, "model": model})
